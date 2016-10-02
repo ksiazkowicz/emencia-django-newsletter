@@ -1,6 +1,4 @@
 """ModelAdmin for Contact"""
-import StringIO
-from django.conf import settings
 from datetime import datetime
 
 from django.contrib import admin
@@ -10,10 +8,9 @@ from django.conf.urls.defaults import patterns
 from django.core.urlresolvers import reverse
 from django.shortcuts import render_to_response
 from django.template import RequestContext
-from django.utils.translation import ugettext_lazy as _
+from django.utils.translation import ugettext as _
 from django.http import HttpResponseRedirect
 from django.contrib.admin.views.main import ChangeList
-from django.db import DatabaseError
 
 from emencia.django.newsletter.models import MailingList
 from emencia.django.newsletter.settings import USE_WORKGROUPS
@@ -52,8 +49,7 @@ class ContactAdmin(admin.ModelAdmin):
 
     def save_model(self, request, contact, form, change):
         workgroups = []
-        if not contact.pk and not request.user.is_superuser \
-               and USE_WORKGROUPS:
+        if not contact.pk and not request.user.is_superuser:
             workgroups = request_workgroups(request)
         contact.save()
         for workgroup in workgroups:
@@ -97,17 +93,9 @@ class ContactAdmin(admin.ModelAdmin):
         new_mailing = MailingList(name=_('New mailinglist at %s') % when,
                                   description=_('New mailing list created in admin at %s') % when)
         new_mailing.save()
+        new_mailing.subscribers = queryset.all()
 
-        if 'lite' in settings.DATABASES['default']['ENGINE']:
-            self.message_user(request, _('SQLite3 or a SpatialLite database type detected, ' \
-                                         'please note you will be limited to 999 contacts ' \
-                                         'per mailing list.'))
-        try:
-            new_mailing.subscribers = queryset.all()
-        except DatabaseError:
-            new_mailing.subscribers = queryset.none()
-
-        if not request.user.is_superuser and USE_WORKGROUPS:
+        if not request.user.is_superuser:
             for workgroup in request_workgroups(request):
                 workgroup.mailinglists.add(new_mailing)
 
@@ -120,15 +108,10 @@ class ContactAdmin(admin.ModelAdmin):
         """Import contacts from a VCard"""
         opts = self.model._meta
 
-        if request.POST:
-            source = request.FILES.get('source') or \
-                     StringIO.StringIO(request.POST.get('source', ''))
-            if not request.user.is_superuser and USE_WORKGROUPS:
-                workgroups = request_workgroups(request)
-            else:
-                workgroups = []
+        if request.FILES:
+            source = request.FILES.get('source')
             inserted = import_dispatcher(source, request.POST['type'],
-                                         workgroups)
+                                         request_workgroups(request))
             if inserted:
                 contacts_imported.send(sender=self, source=source,
                                        type=request.POST['type'])
@@ -175,10 +158,10 @@ class ContactAdmin(admin.ModelAdmin):
                            url(r'^create_mailinglist/$',
                                self.admin_site.admin_view(self.creation_mailinglist),
                                name='newsletter_contact_create_mailinglist'),
-                           url(r'^export/vcard/$',
+                           url(r'^export_vcard/$',
                                self.admin_site.admin_view(self.exportation_vcard),
                                name='newsletter_contact_export_vcard'),
-                           url(r'^export/excel/$',
+                           url(r'^export_excel/$',
                                self.admin_site.admin_view(self.exportation_excel),
                                name='newsletter_contact_export_excel'),)
         return my_urls + urls

@@ -1,9 +1,20 @@
 """Utils for newsletter"""
+import urllib2
+
 from BeautifulSoup import BeautifulSoup
 from django.core.urlresolvers import reverse
 
 from emencia.django.newsletter.models import Link
-from emencia.django.newsletter.settings import USE_PRETTIFY
+
+
+def get_webpage_content(url):
+    """Return the content of the website
+    located in the body markup"""
+    request = urllib2.Request(url)
+    page = urllib2.urlopen(request)
+    soup = BeautifulSoup(page)
+
+    return soup.body.prettify()
 
 
 def body_insertion(content, insertion, end=False):
@@ -16,11 +27,7 @@ def body_insertion(content, insertion, end=False):
         soup.body.append(insertion)
     else:
         soup.body.insert(0, insertion)
-
-    if USE_PRETTIFY:
-        return soup.prettify()
-    else:
-        return soup.renderContents()
+    return soup.prettify()
 
 
 def track_links(content, context):
@@ -31,8 +38,7 @@ def track_links(content, context):
 
     soup = BeautifulSoup(content)
     for link_markup in soup('a'):
-        if link_markup.get('href') and \
-               'no-track' not in link_markup.get('rel', ''):
+        if link_markup.get('href'):
             link_href = link_markup['href']
             link_title = link_markup.get('title', link_href)
             link, created = Link.objects.get_or_create(url=link_href,
@@ -41,7 +47,4 @@ def track_links(content, context):
                                                                               args=[context['newsletter'].slug,
                                                                                     context['uidb36'], context['token'],
                                                                                     link.pk]))
-    if USE_PRETTIFY:
-        return soup.prettify()
-    else:
-        return soup.renderContents()
+    return soup.prettify()

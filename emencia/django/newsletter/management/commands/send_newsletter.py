@@ -1,6 +1,4 @@
 """Command for sending the newsletter"""
-from django.conf import settings
-from django.utils.translation import activate
 from django.core.management.base import NoArgsCommand
 
 from emencia.django.newsletter.mailer import Mailer
@@ -17,11 +15,9 @@ class Command(NoArgsCommand):
         if verbose:
             print 'Starting sending newsletters...'
 
-        activate(settings.LANGUAGE_CODE)
-
         for newsletter in Newsletter.objects.exclude(
             status=Newsletter.DRAFT).exclude(status=Newsletter.SENT):
-            mailer = Mailer(newsletter, verbose=verbose)
+            mailer = Mailer(newsletter)
             if mailer.can_send:
                 if verbose:
                     print 'Start emailing %s' % newsletter.title

@@ -7,6 +7,7 @@ from datetime import timedelta
 from django.db import models
 from django.utils.encoding import smart_str
 from django.core.urlresolvers import reverse
+from django.utils.translation import ugettext
 from django.utils.translation import ugettext_lazy as _
 from django.contrib.contenttypes import generic
 from django.contrib.contenttypes.models import ContentType
@@ -15,10 +16,9 @@ from django.utils.encoding import force_unicode
 
 from tagging.fields import TagField
 from emencia.django.newsletter.managers import ContactManager
-from emencia.django.newsletter.settings import BASE_PATH
-from emencia.django.newsletter.settings import MAILER_HARD_LIMIT
 from emencia.django.newsletter.settings import DEFAULT_HEADER_REPLY
 from emencia.django.newsletter.settings import DEFAULT_HEADER_SENDER
+from emencia.django.newsletter.settings import NEWSLETTER_BASE_PATH
 from emencia.django.newsletter.utils.vcard import vcard_contact_export
 
 # Patch for Python < 2.6
@@ -46,8 +46,7 @@ class SMTPServer(models.Model):
     tls = models.BooleanField(_('server use TLS'))
 
     headers = models.TextField(_('custom headers'), blank=True,
-                               help_text=_('key1: value1 key2: value2, splitted by return line.\n'\
-                                           'Useful for passing some tracking headers if your provider allows it.'))
+                               help_text=_('key1: value1 key2: value2, splitted by return line.'))
     mails_hour = models.IntegerField(_('mails per hour'), default=0)
 
     def connect(self):
@@ -62,21 +61,10 @@ class SMTPServer(models.Model):
             smtp.login(smart_str(self.user), smart_str(self.password))
         return smtp
 
-    def delay(self):
-        """compute the delay (in seconds) between mails to ensure mails
-        per hour limit is not reached
-
-        :rtype: float
-        """
-        if not self.mails_hour:
-            return 0.0
-        else:
-            return 3600.0 / self.mails_hour
-
     def credits(self):
         """Return how many mails the server can send"""
         if not self.mails_hour:
-            return MAILER_HARD_LIMIT
+            return 10000  # Arbitrary value
 
         last_hour = datetime.now() - timedelta(hours=1)
         sent_last_hour = ContactMailingStatus.objects.filter(
@@ -90,7 +78,7 @@ class SMTPServer(models.Model):
     def custom_headers(self):
         if self.headers:
             headers = {}
-            for header in self.headers.splitlines():
+            for header in self.headers.split('\r\n'):
                 if header:
                     key, value = header.split(':')
                     headers[key.strip()] = value.strip()
@@ -193,7 +181,7 @@ class MailingList(models.Model):
         return self.name
 
     class Meta:
-        ordering = ('-creation_date',)
+        ordering = ('creation_date',)
         verbose_name = _('mailing list')
         verbose_name_plural = _('mailing lists')
 
@@ -213,11 +201,9 @@ class Newsletter(models.Model):
                       (CANCELED, _('canceled')),
                       )
 
-    title = models.CharField(_('title'), max_length=255,
-                             help_text=_('You can use the "{{ UNIQUE_KEY }}" variable ' \
-                                         'for unique identifier within the newsletter\'s title.'))
+    title = models.CharField(_('title'), max_length=255)
     content = models.TextField(_('content'), help_text=_('Or paste an URL.'),
-                               default=_('<body>\n<!-- Edit your newsletter here -->\n</body>'))
+                               default='<body>\n<!-- %s -->\n</body>' % ugettext('Edit your newsletter here'))
 
     mailing_list = models.ForeignKey(MailingList, verbose_name=_('mailing list'))
     test_contacts = models.ManyToManyField(Contact, verbose_name=_('test contacts'),
@@ -257,10 +243,10 @@ class Newsletter(models.Model):
         return self.title
 
     class Meta:
-        ordering = ('-creation_date',)
+        ordering = ('creation_date',)
         verbose_name = _('newsletter')
         verbose_name_plural = _('newsletters')
-        permissions = (('can_change_status', 'Can change status'),)
+        permissions = (('can_change_status', ugettext('Can change status')),)
 
 
 class Link(models.Model):
@@ -277,7 +263,7 @@ class Link(models.Model):
         return self.title
 
     class Meta:
-        ordering = ('-creation_date',)
+        ordering = ('creation_date',)
         verbose_name = _('link')
         verbose_name_plural = _('links')
 
@@ -287,7 +273,7 @@ class Attachment(models.Model):
 
     def get_newsletter_storage_path(self, filename):
         filename = force_unicode(filename)
-        return '/'.join([BASE_PATH, self.newsletter.slug, filename])
+        return '/'.join([NEWSLETTER_BASE_PATH, self.newsletter.slug, filename])
 
     newsletter = models.ForeignKey(Newsletter, verbose_name=_('newsletter'))
     title = models.CharField(_('title'), max_length=255)
@@ -340,7 +326,7 @@ class ContactMailingStatus(models.Model):
                                  self.get_status_display())
 
     class Meta:
-        ordering = ('-creation_date',)
+        ordering = ('creation_date',)
         verbose_name = _('contact mailing status')
         verbose_name_plural = _('contact mailing statuses')
 
