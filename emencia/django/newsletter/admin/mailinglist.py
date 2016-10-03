@@ -163,7 +163,18 @@ class MailingListAdmin(admin.ModelAdmin):
         elif is_sub == "2":
             subscribers = []
 
-        result_count = len(subscribers) + len(unsubscribers)
+        if request.POST:
+            action = request.POST.get("action", "")
+            unsub = action == "unsubscribe_selected"
+            remove = action == "remove_selected"
+
+            if action:
+                for contact_id in dict(request.POST).get("_selected_action", ""):
+                    contact = get_object_or_404(Contact, pk=contact_id)
+                    if remove:
+                        mailinglist.remove_from_list(contact)
+                    else:
+                        mailinglist.change_subscription(contact, unsub)
 
         contacts = [x for x in subscribers] + [x for x in unsubscribers]
         contacts = list(set(contacts))
@@ -173,74 +184,90 @@ class MailingListAdmin(admin.ModelAdmin):
             mailinglist=mailinglist,
             unsubscribers=unsubscribers,
             subscribers=paginate(contacts, request.GET.get("page", 1), 30, 10),
-            result_count=result_count,
             filter_url=filter_url,
             is_sub=is_sub,
             full_result_count=full_result_count
         )
         return render(request, "admin/newsletter/mailinglist/manage_subscribers.html", context)
 
-    def switch_sub(self, original, new, object):
-        original.remove(object)
-        new.add(object)
-
     def unsubscribe(self, request, mailinglist_id, subscriber_id):
         mailinglist = get_object_or_404(MailingList, pk=mailinglist_id)
-        contact = mailinglist.subscribers.get(pk=subscriber_id)
-        self.swtich_sub(mailinglist.subscribers, mailinglist.unsubscribers, contact)
-
+        contact = get_object_or_404(Contact, pk=mailinglist_id)
+        mailinglist.change_subscription(contact, True)
         messages.add_message(request, messages.INFO, "User '%s' was unsubscribed from this mailing list." % contact.email)
         return HttpResponseRedirect(request.META.get('HTTP_REFERER'))
 
     def subscribe(self, request, mailinglist_id, subscriber_id):
         mailinglist = get_object_or_404(MailingList, pk=mailinglist_id)
-        contact = mailinglist.subscribers.get(pk=subscriber_id)
-        self.swtich_sub(mailinglist.unsubscribers, mailinglist.subscribers, contact)
-
+        contact = get_object_or_404(Contact, pk=mailinglist_id)
+        mailinglist.change_subscription(contact)
         messages.add_message(request, messages.INFO, "User '%s' was subscribed to this mailing list." % contact.email)
         return HttpResponseRedirect(request.META.get('HTTP_REFERER'))
 
     def remove(self, request, mailinglist_id, subscriber_id):
         mailinglist = get_object_or_404(MailingList, pk=mailinglist_id)
-        try:
-            contact = mailinglist.subscribers.get(pk=subscriber_id)
-            mailinglist.subscribers.remove(contact)
-        except:
-            pass
-
-        try:
-            contact = mailinglist.unsubscribers.get(pk=subscriber_id)
-            mailinglist.unsubscribers.remove(contact)
-        except:
-            pass
-
+        contact = get_object_or_404(Contact, pk=mailinglist_id)
+        mailinglist.remove_from_list(contact)
         messages.add_message(request, messages.INFO, "User '%s' was removed from this mailing list." % contact.email)
         return HttpResponseRedirect(request.META.get('HTTP_REFERER'))
 
+    def add_contact_to_list(self, request, contact, mailinglist, unsub):
+        # check if already subscribed
+        test = mailinglist.subscribers.filter(pk=contact.pk) or mailinglist.unsubscribers.filter(pk=contact.pk)
+
+        if not test:
+            if unsub:
+                mailinglist.unsubscribers.add(contact)
+            else:
+                mailinglist.subscribers.add(contact)
+            messages.add_message(request, messages.INFO,
+                                 "User '%s' was added to mailing list." % contact.email)
+        else:
+            messages.add_message(request, messages.WARNING,
+                                 "User '%s' was already in the mailing list." % contact.email)
+
     def add_subscriber(self, request, mailinglist_id):
         mailinglist = get_object_or_404(MailingList, pk=mailinglist_id)
+        all_from_list = [x.pk for x in mailinglist.subscribers.all()] + [x.pk for x in mailinglist.unsubscribers.all()]
+        all_available_contacts = Contact.objects.exclude(pk__in=all_from_list)
+
+        # filters
+        q = request.GET.get("q", "")
+        is_sub = request.GET.get("subscriber", 0)
+        page = request.GET.get("page", "1")
+
+        # urls for things
+        filter_url = "?"
+        if q:
+            filter_url = "?q=%s&" % urllib.quote_plus(q)
+            available_contacts = all_available_contacts.filter(email__icontains=q)
+        else:
+            available_contacts = all_available_contacts
+
+        full_result_count = len(all_available_contacts)
+
+        if request.POST:
+            action = request.POST.get("action", "")
+            unsub = action == "unsubscribe_selected"
+
+            if action:
+                for contact_id in dict(request.POST).get("_selected_action", ""):
+                    if contact_id > 0:
+                        contact = get_object_or_404(Contact, pk=contact_id)
+                        self.add_contact_to_list(request, contact, mailinglist, unsub)
+
 
         contact_id = request.GET.get("contact_id", "")
         if contact_id:
             contact = get_object_or_404(Contact, pk=contact_id)
-
-            # check if already subscribed
-            test = mailinglist.subscribers.filter(pk=contact_id) or mailinglist.unsubscribers.filter(pk=contact_id)
-
-            if not test:
-                if request.GET.get("unsub", ""):
-                    mailinglist.unsubscribers.add(contact)
-                else:
-                    mailinglist.subscribers.add(contact)
-                messages.add_message(request, messages.INFO,
-                                     "User '%s' was added to mailing list." % contact.email)
-            else:
-                messages.add_message(request, messages.WARNING,
-                                     "User '%s' was already in the mailing list." % contact.email)
+            unsub = request.GET.get("unsub", "")
+            self.add_contact_to_list(request, contact, mailinglist, unsub)
 
         context = dict(
-            title=u"Add subscriber for '%s'" % mailinglist,
+            title=u"Add subscribers to '%s'" % mailinglist,
             mailinglist=mailinglist,
-            available_contacts=Contact.objects.exclude(pk__in=mailinglist.subscribers.all()).exclude(pk__in=mailinglist.unsubscribers.all())
+            available_contacts=paginate(available_contacts, request.GET.get("page", 1), 30, 10),
+            filter_url=filter_url,
+            full_result_count=full_result_count
         )
         return render(request, "admin/newsletter/mailinglist/add_subscribers.html", context)

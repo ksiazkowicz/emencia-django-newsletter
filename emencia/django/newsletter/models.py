@@ -177,6 +177,18 @@ class MailingList(models.Model):
         return self.subscribers.valid_subscribers().exclude(
             id__in=unsubscribers_id)
 
+    def change_subscription(self, contact, unsubscribe=False):
+        if unsubscribe:
+            self.subscribers.remove(contact)
+            self.unsubscribers.add(contact)
+        else:
+            self.unsubscribers.remove(contact)
+            self.subscribers.add(contact)
+
+    def remove_from_list(self, contact):
+        self.subscribers.remove(contact)
+        self.unsubscribers.remove(contact)
+
     def __unicode__(self):
         return self.name
 

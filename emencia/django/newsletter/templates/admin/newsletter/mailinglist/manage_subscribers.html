@@ -22,55 +22,63 @@
         <div class="module filtered" id="changelist">
             <div class="changelist-content">
                 <form action="" method="post">{% grp_csrf_token %}
-
-                <!-- Results -->
-                <div class="result-list-container">
-                    <div class="result-list">
-                        <table cellspacing="0" style="width: 100%;">
-                            <thead>
-                                <tr>
-                                    <th width="5%">ID</th>
-                                    <th>E-mail</th>
-                                    <th>Subscription status</th>
-                                    <th>Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for subscriber in subscribers %}
-                                    <tr class="{% cycle 'row1' 'row2' %}">
-                                        <td><a href="{% url 'admin:newsletter_contact_change' subscriber.pk %}">{{ subscriber.pk }}</a></td>
-                                        <td>{{ subscriber }}</td>
-                                        {% if subscriber in unsubscribers %}
-                                        <td>Unsubscriber</td>
-                                        <td>
-                                            <a href="unsub/{{ subscriber.pk }}">Unsubscribe</a>
-                                        {% else %}
-                                        <td>Subscriber</td>
-                                        <td>
-                                            <a href="sub/{{ subscriber.pk }}">Unsubscribe</a>
-                                        {% endif %}
-                                            <span class="separator">|</span>
-                                            <a href="remove/{{ subscriber.pk }}">Remove</a>
-                                        </td>
+                    <!-- Results -->
+                    <div class="result-list-container">
+                        <div class="result-list">
+                           <div class="changelist-actions actions">
+                                <label>
+                                    <select name="action">
+                                        <option value="" selected="selected">---------</option>
+                                        <option value="subscribe_selected">Subscribe</option>
+                                        <option value="unsubscribe_selected">Unsubscribe</option>
+                                        <option value="remove_selected">Remove</option>
+                                    </select>
+                                </label>
+                            </div>
+                            <table cellspacing="0" style="width: 100%;">
+                                <thead>
+                                    <tr>
+                                        <th style="width: 10px;"><input type="checkbox" id="select-all"></th>
+                                        <th style="width: 30px;">ID</th>
+                                        <th>E-mail</th>
+                                        <th style="width: 140px;">Subscription status</th>
+                                        <th style="width: 120px;">Actions</th>
                                     </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
+                                </thead>
+                                <tbody>
+                                    {% for subscriber in subscribers %}
+                                        <tr class="{% cycle 'row1' 'row2' %}">
+                                            <td class="action-checkbox"><input type="checkbox" class="action-select" value="{{ subscriber.pk }}" name="_selected_action"></td>
+                                            <td><a href="{% url 'admin:newsletter_contact_change' subscriber.pk %}">{{ subscriber.pk }}</a></td>
+                                            <td>{{ subscriber }}</td>
+                                            {% if subscriber in unsubscribers %}
+                                            <td>Unsubscriber</td>
+                                            <td>
+                                                <a href="unsub/{{ subscriber.pk }}">Unsubscribe</a>
+                                            {% else %}
+                                            <td>Subscriber</td>
+                                            <td>
+                                                <a href="sub/{{ subscriber.pk }}">Unsubscribe</a>
+                                            {% endif %}
+                                                <span class="separator">|</span>
+                                                <a href="remove/{{ subscriber.pk }}">Remove</a>
+                                            </td>
+                                        </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div class="paginator">
+                            {% blocktrans with subscribers|length as counter %}{{ counter }} subscribers{% endblocktrans %}
+                            {% pagination_for subscribers %}
+                        </div>
                     </div>
 
-                    <div class="paginator">
-                        {{ result_count }} subskrybentów
-                        {% pagination_for subscribers %}
-                    </div>
-                </div>
-
-                <!-- Submit-Row -->
-                {% comment %}
-                {% if cl.formset and cl.result_count %}
+                    <!-- Submit-Row -->
                     <p class="submit-row">
                         <input type="submit" name="_save" class="default" value="{% trans 'Save' %}"/>
                     </p>
-                {% endif %}{% endcomment %}
                 </form>
             </div>
 
@@ -78,11 +86,11 @@
             {% block filters %}
             <div id="changelist-filter">
                 <!-- Results -->
-                {% ifnotequal result_count full_result_count %}
+                {% ifnotequal subscribers|length full_result_count %}
                 <div class="module results">
                     <h2>{% trans 'Results' %}</h2>
                     <div class="form-row">
-                        <p>{% blocktrans with result_count as counter %}{{ counter }} found{% endblocktrans %}</p>
+                        <p>{% blocktrans with subscribers|length as counter %}{{ counter }} found{% endblocktrans %}</p>
                         <a href="?">{% blocktrans %}{{ full_result_count }} total{% endblocktrans %}</a>
                     </div>
                 </div>
@@ -123,4 +131,10 @@
             {% endblock %}
         </div>
     </div>
+    <script>
+        $("#select-all").change(function() {
+            var check = this.checked;
+            $(".action-select").each(function() { this.checked = check; })
+        });
+    </script>
 {% endblock %}
