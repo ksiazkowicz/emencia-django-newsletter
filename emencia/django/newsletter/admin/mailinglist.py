@@ -184,10 +184,12 @@ class MailingListAdmin(admin.ModelAdmin):
             mailinglist=mailinglist,
             unsubscribers=unsubscribers,
             subscribers=paginate(contacts, request.GET.get("page", 1), 30, 10),
+            result_count=len(contacts),
             filter_url=filter_url,
             is_sub=is_sub,
             full_result_count=full_result_count
         )
+
         return render(request, "admin/newsletter/mailinglist/manage_subscribers.html", context)
 
     def unsubscribe(self, request, mailinglist_id, subscriber_id):
@@ -267,6 +269,7 @@ class MailingListAdmin(admin.ModelAdmin):
             title=u"Add subscribers to '%s'" % mailinglist,
             mailinglist=mailinglist,
             available_contacts=paginate(available_contacts, request.GET.get("page", 1), 30, 10),
+            result_count=len(available_contacts),
             filter_url=filter_url,
             full_result_count=full_result_count
         )
