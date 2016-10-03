@@ -9,8 +9,10 @@ from django.core.urlresolvers import reverse
 from django.shortcuts import get_object_or_404
 from django.utils.translation import ugettext as _
 from django.http import HttpResponseRedirect
+from django.contrib.admin.views.main import ChangeList
 from mezzanine.utils.views import render, paginate
 
+from emencia.django.newsletter.admin.contact import ContactAdmin
 from emencia.django.newsletter.models import Contact
 from emencia.django.newsletter.models import MailingList
 from emencia.django.newsletter.settings import USE_WORKGROUPS
@@ -19,13 +21,14 @@ from emencia.django.newsletter.utils.workgroups import request_workgroups_contac
 from emencia.django.newsletter.utils.workgroups import request_workgroups_mailinglists_pk
 from emencia.django.newsletter.utils.vcard import vcard_contacts_export_response
 from django.contrib import messages
+import urllib
 
 
 class MailingListAdmin(admin.ModelAdmin):
     date_hierarchy = 'creation_date'
     list_display = ('creation_date', 'name', 'description',
                     'subscribers_count', 'unsubscribers_count',
-                    'exportation_link')
+                    'exportation_link', 'management_link',)
     list_editable = ('name', 'description')
     list_filter = ('creation_date', 'modification_date')
     search_fields = ('name', 'description',)
@@ -94,6 +97,14 @@ class MailingListAdmin(admin.ModelAdmin):
     exportation_link.allow_tags = True
     exportation_link.short_description = _('Export')
 
+    def management_link(self, mailinglist):
+        """Display link for subscriber management"""
+        return '<a href="%s">%s</a>' % (reverse('admin:newsletter_mailinglist_manage',
+                                                args=[mailinglist.pk]),
+                                        _('Manage Subscribers'))
+    management_link.allow_tags = True
+    management_link.short_description = _('Subscribers')
+
     def export_subscribers(self, request, mailinglist_id):
         """Export subscribers in the mailing in VCard"""
         mailinglist = get_object_or_404(MailingList, pk=mailinglist_id)
@@ -109,9 +120,15 @@ class MailingListAdmin(admin.ModelAdmin):
                            url(r'^manage/(?P<mailinglist_id>\d+)/$',
                                self.admin_site.admin_view(self.manage_subscribers),
                                name='newsletter_mailinglist_manage'),
+                           url(r'^manage/(?P<mailinglist_id>\d+)/add/$',
+                               self.admin_site.admin_view(self.add_subscriber),
+                               name='newsletter_mailinglist_add'),
                            url(r'^manage/(?P<mailinglist_id>\d+)/unsub/(?P<subscriber_id>\d+)/$',
                                self.admin_site.admin_view(self.unsubscribe),
                                name='newsletter_mailinglist_unsub'),
+                           url(r'^manage/(?P<mailinglist_id>\d+)/sub/(?P<subscriber_id>\d+)/$',
+                               self.admin_site.admin_view(self.subscribe),
+                               name='newsletter_mailinglist_sub'),
                            url(r'^manage/(?P<mailinglist_id>\d+)/remove/(?P<subscriber_id>\d+)/$',
                                self.admin_site.admin_view(self.remove),
                                name='newsletter_mailinglist_remove'),
@@ -124,9 +141,18 @@ class MailingListAdmin(admin.ModelAdmin):
         # filters
         q = request.GET.get("q", "")
         is_sub = request.GET.get("subscriber", 0)
+        page = request.GET.get("page", "1")
+
+        # urls for things
+        base_url = "?"
+        filter_url = base_url
+        if q:
+            filter_url = "?q=%s&" % urllib.quote_plus(q)
 
         subscribers = mailinglist.subscribers.all()
         unsubscribers = mailinglist.unsubscribers.all()
+
+        full_result_count = subscribers.count() + unsubscribers.count()
 
         if q:
             subscribers = subscribers.filter(email__icontains=q)
@@ -137,6 +163,8 @@ class MailingListAdmin(admin.ModelAdmin):
         elif is_sub == "2":
             subscribers = []
 
+        result_count = len(subscribers) + len(unsubscribers)
+
         contacts = [x for x in subscribers] + [x for x in unsubscribers]
         contacts = list(set(contacts))
 
@@ -144,17 +172,32 @@ class MailingListAdmin(admin.ModelAdmin):
             title=u"Manage subscribers for '%s'" % mailinglist,
             mailinglist=mailinglist,
             unsubscribers=unsubscribers,
-            subscribers=paginate(contacts, request.GET.get("page", 1), 30, 10)
+            subscribers=paginate(contacts, request.GET.get("page", 1), 30, 10),
+            result_count=result_count,
+            filter_url=filter_url,
+            is_sub=is_sub,
+            full_result_count=full_result_count
         )
         return render(request, "admin/newsletter/mailinglist/manage_subscribers.html", context)
+
+    def switch_sub(self, original, new, object):
+        original.remove(object)
+        new.add(object)
 
     def unsubscribe(self, request, mailinglist_id, subscriber_id):
         mailinglist = get_object_or_404(MailingList, pk=mailinglist_id)
         contact = mailinglist.subscribers.get(pk=subscriber_id)
-        mailinglist.subscribers.remove(contact)
-        mailinglist.unsubscribers.add(contact)
+        self.swtich_sub(mailinglist.subscribers, mailinglist.unsubscribers, contact)
 
-        messages.add_message(request, messages.INFO, "User '%s' was unsubscribed from this mailing list.")
+        messages.add_message(request, messages.INFO, "User '%s' was unsubscribed from this mailing list." % contact.email)
+        return HttpResponseRedirect(request.META.get('HTTP_REFERER'))
+
+    def subscribe(self, request, mailinglist_id, subscriber_id):
+        mailinglist = get_object_or_404(MailingList, pk=mailinglist_id)
+        contact = mailinglist.subscribers.get(pk=subscriber_id)
+        self.swtich_sub(mailinglist.unsubscribers, mailinglist.subscribers, contact)
+
+        messages.add_message(request, messages.INFO, "User '%s' was subscribed to this mailing list." % contact.email)
         return HttpResponseRedirect(request.META.get('HTTP_REFERER'))
 
     def remove(self, request, mailinglist_id, subscriber_id):
@@ -171,5 +214,33 @@ class MailingListAdmin(admin.ModelAdmin):
         except:
             pass
 
-        messages.add_message(request, messages.INFO, "User '%s' was removed from this mailing list.")
+        messages.add_message(request, messages.INFO, "User '%s' was removed from this mailing list." % contact.email)
         return HttpResponseRedirect(request.META.get('HTTP_REFERER'))
+
+    def add_subscriber(self, request, mailinglist_id):
+        mailinglist = get_object_or_404(MailingList, pk=mailinglist_id)
+
+        contact_id = request.GET.get("contact_id", "")
+        if contact_id:
+            contact = get_object_or_404(Contact, pk=contact_id)
+
+            # check if already subscribed
+            test = mailinglist.subscribers.filter(pk=contact_id) or mailinglist.unsubscribers.filter(pk=contact_id)
+
+            if not test:
+                if request.GET.get("unsub", ""):
+                    mailinglist.unsubscribers.add(contact)
+                else:
+                    mailinglist.subscribers.add(contact)
+                messages.add_message(request, messages.INFO,
+                                     "User '%s' was added to mailing list." % contact.email)
+            else:
+                messages.add_message(request, messages.WARNING,
+                                     "User '%s' was already in the mailing list." % contact.email)
+
+        context = dict(
+            title=u"Add subscriber for '%s'" % mailinglist,
+            mailinglist=mailinglist,
+            available_contacts=Contact.objects.exclude(pk__in=mailinglist.subscribers.all()).exclude(pk__in=mailinglist.unsubscribers.all())
+        )
+        return render(request, "admin/newsletter/mailinglist/add_subscribers.html", context)

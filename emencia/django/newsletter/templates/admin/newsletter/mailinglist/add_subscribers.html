@@ -1,0 +1,64 @@
+{% extends "admin/base_site.html" %}
+{% load staticfiles admin_list i18n future grp_tags grp_csrf mezzanine_tags %}
+
+<!-- JAVASCRIPTS -->
+{% block javascripts %}
+    {{ block.super }}
+    {% url "admin:jsi18n" as jsi18nurl %}
+    <script src="{{ jsi18nurl|default:"../../../jsi18n/" }}"></script>
+    {{ media }}
+    {% if inline_admin_formsets %}
+    <script src="{% static "grappelli/js/admin/Inline.js" %}"></script>
+    <script src="{% static "grappelli/js/admin/CollapsedInlineFieldsets.js" %}"></script>
+    {% endif %}
+{% endblock %}
+
+<!-- COLTYPE/BODYCLASS -->
+{% block coltype %}{% if ordered_objects %}colMS{% else %}colM{% endif %}{% endblock %}
+{% block bodyclass %}{{ opts.app_label }}-{{ opts.object_name.lower }} change-form{% endblock %}
+
+
+{% block content %}
+    <div id="content-main">
+        <form action="" method="post">{% grp_csrf_token %}
+
+            {% if available_contacts %}
+            <div>
+                <fieldset class="module aligned ">
+                    <div class="form-row name  ">
+                        <div>
+                            <label for="id_name" class="required">Available contacts:</label>
+                            <table cellspacing="0">
+                                <thead>
+                                    <tr>
+                                        <th width="5%">ID</th>
+                                        <th width="500">E-mail</th>
+                                        <th width="5">Add to mailing list</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for subscriber in available_contacts %}
+                                        <tr class="{% cycle 'row1' 'row2' %}">
+                                            <td><a href="{% url 'admin:newsletter_contact_change' subscriber.pk %}">{{ subscriber.pk }}</a></td>
+                                            <td>{{ subscriber }}</td>
+                                            <td>
+                                                <a href="?contact_id={{ subscriber.pk }}">Subscribers</a> |
+                                                <a href="?contact_id={{ subscriber.pk }}&unsub=1">Unsubscribers</a>
+                                            </td>
+                                        </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </fieldset>
+            </div>
+            {% else %}
+            <div style="width: 50%; text-align: center; margin: 200px auto;">
+                <h1>No available contacts</h1>
+                <p>Do you want to <a href="/admin/newsletter/contact/add">add a contact</a> first?</p>
+            </div>
+            {% endif %}
+        </form>
+    </div>
+{% endblock %}

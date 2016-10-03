@@ -1,4 +1,4 @@
-{% extends "admin/base_site.html" %}
+{% extends "admin/change_list.html" %}
 {% load staticfiles admin_list i18n future grp_tags grp_csrf mezzanine_tags %}
 
 
@@ -8,43 +8,28 @@
     </ul>
     <div id="content-main">
         <style>
-            .paginator { padding: 10px 12px; }
             .pagination { display: inline-block; float: right; }
-            .pagination li { display: inline; margin-right: 1px; }
+            .pagination li { display: inline; }
             .pagination li.prev,
             .pagination li.next { display: none; }
-
-            .pagination li {
-                padding: 4px 8px;
-                font-size: 11px;
-                font-weight: bold;
-                border: 1px solid #ccc;
-                border-color: #ccc #ddd #ddd #ccc;
-                -moz-border-radius: 3px;
-                -webkit-border-radius: 3px;
-                border-radius: 3px;
-                background: #fff;
-                text-align: center;
-            }
-            .pagination li.active {
+            .pagination li.active a {
+                color: #000;
                 background: transparent; border: none;
             }
-            .pagination li.active a { color: #000; }
         </style>
 
         <!-- Changelist -->
-        <div class="module" id="changelist" style="float: left; width: calc(100% - 206px);">
+        <div class="module filtered" id="changelist">
             <div class="changelist-content">
                 <form action="" method="post">{% grp_csrf_token %}
 
                 <!-- Results -->
                 <div class="result-list-container">
                     <div class="result-list">
-                        <table cellspacing="0">
+                        <table cellspacing="0" style="width: 100%;">
                             <thead>
                                 <tr>
-                                    <th class="action-checkbox-column"><input type="checkbox" id="action-toggle"></th>
-                                    <th>ID</th>
+                                    <th width="5%">ID</th>
                                     <th>E-mail</th>
                                     <th>Subscription status</th>
                                     <th>Actions</th>
@@ -53,14 +38,19 @@
                             <tbody>
                                 {% for subscriber in subscribers %}
                                     <tr class="{% cycle 'row1' 'row2' %}">
-                                        <td class="action-checkbox"><input type="checkbox" class="action-select" value="{{ subscriber.pk }}" name="_selected_action"></td>
-                                        <td>{{ subscriber.pk }}</td>
+                                        <td><a href="{% url 'admin:newsletter_contact_change' subscriber.pk %}">{{ subscriber.pk }}</a></td>
                                         <td>{{ subscriber }}</td>
-                                        <td>{% if subscriber in unsubscribers %}Unsubscriber{% else %}Subscriber{% endif %}</td>
+                                        {% if subscriber in unsubscribers %}
+                                        <td>Unsubscriber</td>
                                         <td>
-                                            <a href="remove/{{ subscriber.pk }}">Remove</a>
-                                            <span class="separator">|</span>
                                             <a href="unsub/{{ subscriber.pk }}">Unsubscribe</a>
+                                        {% else %}
+                                        <td>Subscriber</td>
+                                        <td>
+                                            <a href="sub/{{ subscriber.pk }}">Unsubscribe</a>
+                                        {% endif %}
+                                            <span class="separator">|</span>
+                                            <a href="remove/{{ subscriber.pk }}">Remove</a>
                                         </td>
                                     </tr>
                                 {% endfor %}
@@ -69,7 +59,7 @@
                     </div>
 
                     <div class="paginator">
-                        {{ mailinglist.subscribers.count }} subskrybentów
+                        {{ result_count }} subskrybentów
                         {% pagination_for subscribers %}
                     </div>
                 </div>
@@ -83,43 +73,30 @@
                 {% endif %}{% endcomment %}
                 </form>
             </div>
-        </div>
 
             <!-- Sidebar -->
             {% block filters %}
-            <div id="changelist-filter" style="float: right;">
+            <div id="changelist-filter">
                 <!-- Results -->
-                {% comment %}{% ifnotequal cl.result_count cl.full_result_count %}
+                {% ifnotequal result_count full_result_count %}
                 <div class="module results">
                     <h2>{% trans 'Results' %}</h2>
                     <div class="form-row">
-                        <p>{% blocktrans with cl.result_count as counter %}{{ counter }} found{% endblocktrans %}</p>
-                        <a href="?{% if cl.is_popup %}pop=1{% endif %}">{% blocktrans with cl.full_result_count as full_result_count %}{{ full_result_count }} total{% endblocktrans %}</a>
+                        <p>{% blocktrans with result_count as counter %}{{ counter }} found{% endblocktrans %}</p>
+                        <a href="?">{% blocktrans %}{{ full_result_count }} total{% endblocktrans %}</a>
                     </div>
                 </div>
                 {% endifnotequal %}
 
-                <!-- Search -->
-                {% block search %}{% search_form cl %}{% endblock %}
-
-                <!-- Date Hierarchy -->
-                {% block date_hierarchy %}{% date_hierarchy cl %}{% endblock %}
-
-                {% if cl.has_filters %}
-                <!-- Filter -->
-                <div class="module filter">
-                    <h2>{% trans 'Filter' %}</h2>
-                    {% for spec in cl.filter_specs %}{% admin_list_filter cl spec %}{% endfor %}
-                </div>
-                {% endif %}{% endcomment %}
                 <!-- Search Form -->
                 <div class="module search">
                     <h2>Wyszukaj</h2>
                     <div id="toolbar">
                         <form id="changelist-search" action="" method="get">
                             <div><!-- DIV needed for valid HTML -->
-                                <div class="form-row" style="width: 100%;">
-                                    <input type="text" size="40" name="q" value="{{ q }}" id="searchbar" class="search-fields-verbose">
+                                <div class="form-row">
+                                    <input type="text" size="40" name="q" value="" id="searchbar" class="search-fields-verbose">
+                                    <input type="hidden" name="subscriber" value="{{ is_sub }}">
                                     <input type="submit" value="">
                                 </div>
                             </div>
@@ -130,19 +107,20 @@
                 <!-- Filter -->
                 <div class="module filter">
                     <h2>Filter</h2>
-                    <div class="filterset collapse-closed">
+                    <div class="filterset {% if not is_sub %}collapse-closed{% endif %}">
                         <h3 class="form-row"> By Status </h3>
                         <ul>
-                            <li class="form-row narrow selected">
-                            <a href="?">Wszystko</a></li>
-                            <li class="form-row narrow">
-                            <a href="?subscriber=1">Subscriber</a></li>
-                            <li class="form-row narrow">
-                            <a href="?subscriber=2">Unsubscriber</a></li>
+                            <li class="form-row narrow {% if not is_sub %}selected{% endif %}">
+                            <a href="{{ filter_url }}">Wszystko</a></li>
+                            <li class="form-row narrow {% if is_sub == "1" %}selected{% endif %}">
+                            <a href="{{ filter_url }}subscriber=1">Subscriber</a></li>
+                            <li class="form-row narrow {% if is_sub == "2" %}selected{% endif %}">
+                            <a href="{{ filter_url }}subscriber=2">Unsubscriber</a></li>
                         </ul>
                     </div>
                 </div>
             </div>
             {% endblock %}
         </div>
+    </div>
 {% endblock %}
