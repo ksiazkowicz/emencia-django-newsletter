@@ -177,7 +177,6 @@ class MailingListAdmin(admin.ModelAdmin):
                         mailinglist.change_subscription(contact, unsub)
 
         contacts = [x for x in subscribers] + [x for x in unsubscribers]
-        contacts = list(set(contacts))
 
         context = dict(
             title=u"Manage subscribers for '%s'" % mailinglist,
